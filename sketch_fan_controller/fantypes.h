@@ -11,8 +11,10 @@ const signal REST { false, 11000 };
 
 // Complete message is 50 items
 // Preamble uses 32
-// Message content uses 16
-// Postamble uses 2
+// Message content uses 10
+// Postamble uses 8
+// Another example online showed message of 16 and postamble of 2, but the last
+// 6 of the messages was all the same. Adjust if needed.
 
 signal sig_preamble [] {
   SHORT_ON, LONG_OFF,
