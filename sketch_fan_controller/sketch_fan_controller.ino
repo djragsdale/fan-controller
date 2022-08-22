@@ -14,9 +14,12 @@
  * - pip3 install pyserial https://pypi.org/project/pyserial/.
  * - MCU driver https://www.silabs.com/Support%20Documents/Software/Mac_OSX_VCP_Driver.zip.
  * - Flash download tool https://www.espressif.com/en/support/download/other-tools.
+ * 
+ * RGB LEDS: https://www.elegoo.com/collections/electronic-component-kits/products/elegoo-led-assortment-kit
  */
 
 #include "fantypes.h"
+#include "ledstates.h"
 // defines THINGNAME
 // exposes WIFI_SSID, WIFI_PASSWORD, and AWS_IOT_ENDPOINT
 #include "secrets.h";
@@ -40,6 +43,8 @@
 
 #define SERIAL_BAUD_RATE 115200
 
+bool isInError = false;
+ 
 WiFiClientSecure net;
 MQTTClient client = MQTTClient(256);
 
@@ -68,11 +73,18 @@ void connectWiFi() {
 
   Serial.println("Connecting to Wi-Fi");
 
-  while (WiFi.status() != WL_CONNECTED){
+  setLedState(LED_STATE_TRANSMITTING);
+  while (WiFi.status() != WL_CONNECTED) {
+    if (isLedOff()) {
+      setLedState(LED_STATE_TRANSMITTING);
+    } else {
+      setLedState(LED_STATE_OFF);
+    }
     delay(500);
     Serial.print(".");
   }
   Serial.println("");
+  setLedState(LED_STATE_OFF);
 
   digitalWrite(LED_BUILTIN, HIGH);
   Serial.println("WiFi connected");
@@ -139,6 +151,7 @@ void setupTLS() {
 void transmit(signal signalArray[16] = sig_preamble) {
   for (int burst = 0; burst < 6; burst++) {
     digitalWrite(LED_BUILTIN, LOW);
+    setLedState(LED_STATE_TRANSMITTING);
     // Should add up to 50
     for (int pre = 0; pre < 32; pre++) {
       signal preambleSignal = sig_preamble[pre];
@@ -156,6 +169,7 @@ void transmit(signal signalArray[16] = sig_preamble) {
       delayMicroseconds(postambleSignal.duration);
     }
     digitalWrite(LED_BUILTIN, HIGH);
+    setLedState(LED_STATE_OFF);
   }
 }
 
@@ -189,6 +203,7 @@ int fanControl(String cmd) {
 }
 
 void publishMessage(String message, int result) {
+  setLedState(LED_STATE_TRANSMITTING);
   StaticJsonDocument<200> doc;
   doc["timestamp"] = millis();
   doc["message"] = message;
@@ -200,6 +215,7 @@ void publishMessage(String message, int result) {
 }
 
 void messageHandler(String &topic, String &payload) {
+  setLedState(LED_STATE_RECEIVING);
   Serial.println("incoming: " + topic + " - " + payload);
 
   StaticJsonDocument<200> doc;
@@ -214,11 +230,18 @@ void reconnect() {
   // Loop until we're reconnected
   while (!client.connected()) {
     Serial.print("Attempting MQTT connection...");
+    if (isLedOff()) {
+      setLedState(LED_STATE_TRANSMITTING);
+    } else {
+      setLedState(LED_STATE_OFF);
+    }
     // Attempt to connect
     if (client.connect(THINGNAME)) {
+      setLedState(LED_STATE_POWER);
       Serial.println("AWS IoT Connected!");
       client.subscribe(AWS_IOT_SUBSCRIBE_TOPIC);
     } else {
+      setLedState(LED_STATE_ERROR);
       Serial.print("failed, rc=");
       Serial.println(" try again in 5 seconds");
 
@@ -233,18 +256,41 @@ void reconnect() {
   }
 }
 
+const int TEST_INTERVAL = 500;
+void testPeripherals() {
+  setLedState(LED_STATE_POWER);
+  delay(TEST_INTERVAL);
+  setLedState(LED_STATE_OFF);
+  delay(TEST_INTERVAL);
+  setLedState(LED_STATE_ERROR);
+  delay(TEST_INTERVAL);
+  setLedState(LED_STATE_OFF);
+  delay(TEST_INTERVAL);
+  setLedState(LED_STATE_RECEIVING);
+  delay(TEST_INTERVAL);
+  setLedState(LED_STATE_OFF);
+  delay(TEST_INTERVAL);
+  setLedState(LED_STATE_TRANSMITTING);
+  delay(TEST_INTERVAL);
+  setLedState(LED_STATE_OFF);
+  delay(TEST_INTERVAL);
+}
+
 void setup() {
   // put your setup code here, to run once:
   pinMode(TX_PIN, OUTPUT);
+  setupLeds();
   pinMode(LED_BUILTIN, OUTPUT);
   digitalWrite(LED_BUILTIN, HIGH);
 
 
   Serial.begin(SERIAL_BAUD_RATE);
+  testPeripherals();
   connectWiFi();
   
   if (!SPIFFS.begin()) {
     Serial.println("Failed to mount file system");
+    isInError = true;
     return;
   }
 
@@ -258,6 +304,12 @@ void setup() {
 }
 
 void loop() {
+  if (isInError) {
+    setLedState(LED_STATE_ERROR);
+  } else {
+    setLedState(LED_STATE_POWER);
+  }
+  
   if (!client.connected()) {
     reconnect();
   }
